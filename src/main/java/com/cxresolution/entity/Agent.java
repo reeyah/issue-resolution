@@ -3,7 +3,15 @@ package main.java.com.cxresolution.entity;
 import main.java.com.cxresolution.enums.IssueType;
 import main.java.com.cxresolution.enums.IssueStatus;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Queue;
+import java.util.Set;
+
 
 public class Agent {
     private final String agentId;

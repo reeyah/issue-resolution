@@ -4,7 +4,7 @@ import main.java.com.cxresolution.entity.Agent;
 import main.java.com.cxresolution.entity.Issue;
 import main.java.com.cxresolution.enums.IssueType;
 import main.java.com.cxresolution.enums.IssueStatus;
-import main.java.com.cxresolution.utils.assignment.AssignmentStrategy;
+import main.java.com.cxresolution.service.AssignmentService.AssignmentResult;
 
 import java.util.Collection;
 import java.util.List;
@@ -15,102 +15,129 @@ public class IssueResolutionSystem {
 
     private final AgentDomainService agentService;
     private final IssueDomainService issueService;
-    private final AssignmentStrategy assignmentStrategy;
+    private final AssignmentService assignmentService;
 
     public IssueResolutionSystem(AgentDomainService agentService,
                                  IssueDomainService issueService,
-                                 AssignmentStrategy assignmentStrategy) {
+                                 AssignmentService assignmentService) {
         this.agentService = agentService;
         this.issueService = issueService;
-        this.assignmentStrategy = assignmentStrategy;
+        this.assignmentService = assignmentService;
     }
 
-    public void createIssue(String transactionId, IssueType issueType, String subject, String description, String email) {
-        Issue issue = issueService.createIssue(transactionId, issueType, subject, description, email);
-        System.out.println(">>> Issue " + issue.getIssueId() + " created for transaction \"" + transactionId + "\"");
+    public void createIssue(String transactionId, String issueTypeStr, String subject, String description, String email) {
+        try {
+            IssueType issueType = IssueType.fromDisplayName(issueTypeStr);
+            Issue issue = issueService.createIssue(transactionId, issueType, subject, description, email);
+            System.out.println(">>> Issue " + issue.getIssueId() + " created against transaction \"" + transactionId + "\"");
+        } catch (IllegalArgumentException e) {
+            System.out.println(">>> Error: Invalid issue type - " + issueTypeStr);
+        }
     }
 
-    public void addAgent(String agentEmail, String agentName, List<IssueType> expertise) {
-        Agent agent = agentService.createAgent(agentEmail, agentName, expertise);
-        System.out.println(">>> Agent " + agent.getAgentId() + " created");
+    public void addAgent(String agentEmail, String agentName, List<String> expertiseStrings) {
+        try {
+            List<IssueType> expertise = expertiseStrings.stream()
+                    .map(IssueType::fromDisplayName)
+                    .toList();
+            Agent agent = agentService.createAgent(agentEmail, agentName, expertise);
+            System.out.println(">>> Agent " + agent.getAgentId() + " created");
+        } catch (IllegalArgumentException e) {
+            System.out.println(">>> Error: Invalid expertise type in list");
+        }
     }
 
     public void assignIssue(String issueId) {
         Optional<Issue> issueOpt = issueService.getIssueById(issueId);
         if (issueOpt.isEmpty()) {
-            System.out.println("Issue not found: " + issueId);
+            System.out.println(">>> Issue not found: " + issueId);
             return;
         }
 
         Issue issue = issueOpt.get();
-        Optional<Agent> assignedAgent = assignmentStrategy.assignAgent(issue.getIssueType(),
-                agentService.getAllAgents());
 
-        if (assignedAgent.isPresent()) {
-            //todo: workhistory Updation extraction
-            System.out.println(">>> Issue " + issueId + " assigned to agent " + assignedAgent.get().getAgentId());
-        } else {
-            System.out.println("No available agent found for issue type: " + issue.getIssueType());
+        if (issue.getAssignedAgentId().isPresent()) {
+            System.out.println(">>> Issue " + issueId + " is already assigned to agent " +
+                    issue.getAssignedAgentId().get());
+            return;
         }
+
+        AssignmentResult result = assignmentService.assignIssue(issue);
+
+        if (result.isSuccessful()) {
+            String agentId = result.getAssignedAgent().get().getAgentId();
+            if (result.getMessage().contains("waitlist")) {
+                System.out.println(">>> Issue " + issueId + " added to waitlist of Agent " + agentId);
+            } else {
+                System.out.println(">>> Issue " + issueId + " assigned to agent " + agentId);
+            }
+        } else {
+            System.out.println(">>> No available agent found for issue type: " + issue.getIssueType().getDisplayName());
+        }
+    }
+
+    public void resolveIssue(String issueId, String resolution) {
+        Optional<Issue> issueOpt = issueService.getIssueById(issueId);
+        if (issueOpt.isEmpty()) {
+            System.out.println(">>> Issue not found: " + issueId);
+            return;
+        }
+
+        Issue issue = issueOpt.get();
+
+        issue.updateStatus(IssueStatus.RESOLVED, resolution);
+
+        issue.getAssignedAgentId()
+                .flatMap(agentService::getAgentById)
+                .ifPresent(agent -> agent.resolveCurrentIssue(resolution));
+
+        System.out.println(">>> " + issueId + " issue marked resolved");
     }
 
     public void getIssues(Map<String, String> filters) {
         List<Issue> filteredIssues = issueService.getFilteredIssues(filters);
-
         if (filteredIssues.isEmpty()) {
             System.out.println(">>> No issues found for the given filters.");
         } else {
-            filteredIssues.forEach(System.out::println);
+            filteredIssues.forEach(issue -> {
+                System.out.println(issue.toString());
+            });
         }
     }
 
     public void updateIssue(String issueId, String status, String resolution) {
         Optional<Issue> issueOpt = issueService.getIssueById(issueId);
         if (issueOpt.isEmpty()) {
-            System.out.println("Issue not found: " + issueId);
+            System.out.println(">>> Issue not found: " + issueId);
             return;
         }
 
-        IssueStatus parsedStatus;
         try {
-            parsedStatus = IssueStatus.valueOf(status.toUpperCase());
+            IssueStatus parsedStatus = IssueStatus.valueOf(status.toUpperCase().replace(" ", "_"));
+            Issue issue = issueOpt.get();
+            issue.updateStatus(parsedStatus, resolution);
+            System.out.println(">>> " + issueId + " status updated to " + parsedStatus);
         } catch (IllegalArgumentException e) {
-            System.out.println("Invalid status provided: " + status);
-            return;
+            System.out.println(">>> Invalid status provided: " + status);
         }
-
-        Issue issue = issueOpt.get();
-        issue.setStatus(parsedStatus);
-        issue.setResolution(resolution);
-
-        System.out.println(">>> Issue " + issueId + " updated to " + parsedStatus);
-    }
-
-    public void resolveIssue(String issueId, String resolution) {
-        Optional<Issue> issueOpt = issueService.getIssueById(issueId);
-        if (issueOpt.isEmpty()) {
-            System.out.println("Issue not found: " + issueId);
-            return;
-        }
-
-        Issue issue = issueOpt.get();
-        issue.setStatus(IssueStatus.RESOLVED);
-        issue.setResolution(resolution);
-
-        issue.getAssignedAgentId()
-                .flatMap(agentService::getAgentById)
-                .ifPresent(Agent::markFree);
-
-        System.out.println(">>> Issue " + issueId + " resolved.");
     }
 
     public void viewAgentsWorkHistory() {
         Collection<Agent> allAgents = agentService.getAllAgents();
         System.out.println(">>> Agent Work Histories:");
-        for (Agent agent : allAgents) {
-            System.out.println("Agent: " + agent.getAgentId() + " (" + agent.getName() + ")");
-            agent.getWorkHistory().forEach(issue ->
-                    System.out.println(" - Issue: " + issue.getIssueId() + ", Status: " + issue.getStatus()));
+
+        if (allAgents.isEmpty()) {
+            System.out.println("No agents found.");
+            return;
         }
+
+        allAgents.forEach(agent -> {
+            System.out.print(agent.getAgentId() + " -> {");
+            String workHistory = agent.getWorkHistory().stream()
+                    .map(Issue::getIssueId)
+                    .reduce((a, b) -> a + ", " + b)
+                    .orElse("");
+            System.out.println(workHistory + "}");
+        });
     }
 }

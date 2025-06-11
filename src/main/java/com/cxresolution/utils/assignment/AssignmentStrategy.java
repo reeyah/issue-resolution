@@ -7,5 +7,5 @@ import java.util.Collection;
 import java.util.Optional;
 
 public interface AssignmentStrategy {
-    Optional<Agent> assignAgent(IssueType issueType, Collection<Agent> agents);
+    Optional<Agent> selectAgent(IssueType issueType, Collection<Agent> agents);
 }

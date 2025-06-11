@@ -10,9 +10,10 @@ import java.util.Optional;
 public class FirstAvailableAgentStrategy implements AssignmentStrategy {
 
     @Override
-    public Optional<Agent> assignAgent(IssueType issueType, Collection<Agent> agents) {
+    public Optional<Agent> selectAgent(IssueType issueType, Collection<Agent> agents) {
         return agents.stream()
-                .filter(agent -> agent.isFree() && agent.getExpertise().contains(issueType))
+                .filter(agent -> agent.getExpertise().contains(issueType))
+                .filter(Agent::isFree)
                 .findFirst();
     }
 }

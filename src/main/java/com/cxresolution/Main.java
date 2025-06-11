@@ -16,8 +16,20 @@ public class Main {
         IssueStore issueStore = new IssueStore();
         AgentDomainService agentService = new AgentDomainService(agentStore);
         IssueDomainService issueService = new IssueDomainService(issueStore);
-        AssignmentStrategy assignmentStrategy = new FirstAvailableAgentStrategy();
-        IssueResolutionSystem system = new IssueResolutionSystem(agentService, issueService, assignmentStrategy);
+        FirstAvailableAgentStrategy strategy = new FirstAvailableAgentStrategy();
+        AssignmentService assignmentService = new AssignmentService(strategy, agentService);
+        IssueResolutionSystem system = new IssueResolutionSystem(agentService, issueService, assignmentService);
+
+        system.createIssue("T1", "Payment Related", "Payment Failed", "My payment failed but money is debited", "testUser1@test.com");
+        system.createIssue("T2", "Mutual Fund Related", "Purchase Failed", "Unable to purchase Mutual Fund", "testUser2@test.com");
+        system.createIssue("T3", "Payment Related", "Payment Failed", "My payment failed but money is debited", "testUser2@test.com");
+
+        system.addAgent("agent1@test.com", "Agent 1", Arrays.asList("Payment Related", "Gold Related"));
+        system.addAgent("agent2@test.com", "Agent 2", Arrays.asList("Mutual Fund Related"));
+
+        system.assignIssue("I1");
+        system.assignIssue("I2");
+        system.assignIssue("I3");
 
         while (true) {
             System.out.println("\n==== Issue Resolution System ====");
@@ -40,8 +52,9 @@ public class Main {
                     System.out.print("Agent Email: ");
                     String email = scanner.nextLine();
                     System.out.print("Expertise (comma separated): ");
-                    List<IssueType> expertise = Arrays.stream(scanner.nextLine().split(","))
-                            .map(e -> IssueType.valueOf(e.trim().toUpperCase().replace(" ", "_")))
+                    List<String> expertise = Arrays.stream(scanner.nextLine().split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
                             .toList();
                     system.addAgent(email, name, expertise);
                     break;
@@ -51,14 +64,7 @@ public class Main {
                     String txnId = scanner.nextLine();
 
                     System.out.print("Issue Type (e.g., PAYMENT_RELATED, MUTUAL_FUND_RELATED): ");
-                    String typeInput = scanner.nextLine();
-                    IssueType issueType;
-                    try {
-                        issueType = IssueType.valueOf(typeInput.trim().toUpperCase().replace(" ", "_"));
-                    } catch (IllegalArgumentException e) {
-                        System.out.println("Invalid issue type. Please enter a valid IssueType enum value.");
-                        break;
-                    }
+                    String issueType = scanner.nextLine();
 
                     System.out.print("Subject: ");
                     String subject = scanner.nextLine();
